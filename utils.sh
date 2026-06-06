@@ -564,10 +564,12 @@ patch_apk() {
 
 fix_fb_independence() {
 	# Rename the <permission> declarations Messenger shares with the Facebook app
-	# so the re-signed APK installs alongside com.facebook.katana
-	# (avoids INSTALL_FAILED_DUPLICATE_PERMISSION). Rebuilds + re-signs the apk.
+	# (com.facebook.katana) to an app.* prefix, so the patched Messenger installs
+	# alongside Facebook without INSTALL_FAILED_DUPLICATE_PERMISSION.
+	# Runs on the STOCK apk BEFORE patching, so morphe-cli signs + aligns the
+	# result natively (no separate re-sign; avoids the BKS-keystore problem).
 	local apk=$1 OP
-	pr "Applying Facebook coexistence fix (renaming duplicate permissions)"
+	pr "Renaming duplicate Facebook permissions for coexistence"
 	if ! OP=$(python3 tools/fb-independence.py "$apk" "${apk}.fbtmp" 2>&1); then
 		epr "fb-independence failed: $OP"
 		rm -f "${apk}.fbtmp" || :
@@ -575,12 +577,6 @@ fix_fb_independence() {
 	fi
 	pr "$OP"
 	mv -f "${apk}.fbtmp" "$apk"
-	if ! OP=$(java -jar "$APKSIGNER" sign --ks ks.keystore --ks-pass pass:123456789 \
-		--key-pass pass:123456789 --ks-key-alias jhc "$apk" 2>&1); then
-		epr "apksigner (fb-independence) error: $OP"
-		return 1
-	fi
-	rm -f "${apk}.idsig" || :
 	return 0
 }
 
@@ -741,6 +737,9 @@ build_rv() {
 
 		local stock_apk_to_patch="${stock_apk}.stripped.apk"
 		cp -f "$stock_apk" "$stock_apk_to_patch"
+		if [ "$pkg_name" = "com.facebook.orca" ]; then
+			fix_fb_independence "$stock_apk_to_patch" || { epr "FB independence step failed, not building ${table}"; return 0; }
+		fi
 		if [ "$build_mode" = module ]; then
 			zip -d "$stock_apk_to_patch" "lib/*" >/dev/null 2>&1 || :
 		else
@@ -768,9 +767,6 @@ build_rv() {
 		if [ "$build_mode" = apk ]; then
 			if [ "${NORB:-}" != true ] || { [ ! -f "$patched_apk" ] && [ ! -f "$apk_output" ]; }; then
 				mv -f "$patched_apk" "$apk_output"
-			fi
-			if [ "$pkg_name" = "com.facebook.orca" ] && [ -f "$apk_output" ]; then
-				fix_fb_independence "$apk_output" || { epr "FB independence step failed, not building ${table}"; return 0; }
 			fi
 			pr "Built ${table} (non-root): '${apk_output}'"
 			continue

@@ -35,6 +35,15 @@ ALIGN_DEFAULT = 4
 ALIGN_SO = 16384  # multiple of 4096, satisfies both 4KB and 16KB page devices
 
 
+def is_signature_file(name: str) -> bool:
+    """JAR (v1) signature files. Editing the manifest invalidates them; the
+    patcher re-signs afterwards, so drop them to avoid stale-digest confusion."""
+    u = name.upper()
+    if not u.startswith("META-INF/"):
+        return False
+    return u == "META-INF/MANIFEST.MF" or u.endswith((".SF", ".RSA", ".DSA", ".EC"))
+
+
 def utf16le(b: bytes) -> bytes:
     return b.decode("ascii").encode("utf-16-le")
 
@@ -66,6 +75,8 @@ def main() -> int:
     with zipfile.ZipFile(src, "r") as zin, \
             zipfile.ZipFile(dst, "w") as zout:
         for zi in zin.infolist():
+            if is_signature_file(zi.filename):
+                continue
             data = zin.read(zi)
             if zi.filename == MANIFEST:
                 data, renamed = rename_in_manifest(data)
