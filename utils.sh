@@ -562,6 +562,28 @@ patch_apk() {
 	fi
 }
 
+fix_fb_independence() {
+	# Rename the <permission> declarations Messenger shares with the Facebook app
+	# so the re-signed APK installs alongside com.facebook.katana
+	# (avoids INSTALL_FAILED_DUPLICATE_PERMISSION). Rebuilds + re-signs the apk.
+	local apk=$1 OP
+	pr "Applying Facebook coexistence fix (renaming duplicate permissions)"
+	if ! OP=$(python3 tools/fb-independence.py "$apk" "${apk}.fbtmp" 2>&1); then
+		epr "fb-independence failed: $OP"
+		rm -f "${apk}.fbtmp" || :
+		return 1
+	fi
+	pr "$OP"
+	mv -f "${apk}.fbtmp" "$apk"
+	if ! OP=$(java -jar "$APKSIGNER" sign --ks ks.keystore --ks-pass pass:123456789 \
+		--key-pass pass:123456789 --ks-key-alias jhc "$apk" 2>&1); then
+		epr "apksigner (fb-independence) error: $OP"
+		return 1
+	fi
+	rm -f "${apk}.idsig" || :
+	return 0
+}
+
 check_sig() {
 	local file=$1 pkg_name=$2
 	local sig
@@ -746,6 +768,9 @@ build_rv() {
 		if [ "$build_mode" = apk ]; then
 			if [ "${NORB:-}" != true ] || { [ ! -f "$patched_apk" ] && [ ! -f "$apk_output" ]; }; then
 				mv -f "$patched_apk" "$apk_output"
+			fi
+			if [ "$pkg_name" = "com.facebook.orca" ] && [ -f "$apk_output" ]; then
+				fix_fb_independence "$apk_output" || { epr "FB independence step failed, not building ${table}"; return 0; }
 			fi
 			pr "Built ${table} (non-root): '${apk_output}'"
 			continue
