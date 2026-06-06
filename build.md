@@ -1,5 +1,5 @@
-Messenger (arm-v7a): 564.0.0.42.89  
 Messenger (arm64-v8a): 564.0.0.42.89  
+Messenger (arm-v7a): 564.0.0.42.89  
 
 Use [zygisk-detach](https://github.com/j-hc/zygisk-detach) to detach root the app from Play Store
   
